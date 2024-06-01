@@ -69,7 +69,7 @@ static void svg_header(void)
 	w = ((w < 1600.0) ? 1600.0 : w);
 
 	/* height is variable based on pss, psize, ksize */
-	h = 400.0 + (scale_y * 30.0) /* base graphs and title */
+	h = (scale_y * 30.0) /* base graphs and title */
 	    + (pss ? (100.0 * scale_y) + (scale_y * 7.0) : 0.0) /* pss estimate */
 	    + psize + ksize + esize;
 
@@ -214,6 +214,12 @@ static void svg_title(void)
 	svg("</text>\n");
 	svg("<text class=\"sec\" x=\"20\" y=\"155\">Graph data: %.03f samples/sec, recorded %i total, dropped %i samples, %i processes, %i filtered</text>\n",
 	    hz, len, overrun, pscount, pfiltered);
+	svg("<rect class=\"ps\" style=\"fill: %s\" x=\"0\" y=\"160\" width=\"30\" height=\"18\" />", "rgb(188,166,66)");
+	svg("<text class=\"sec\" x=\"35\" y=\"175\">waittime</text>");
+	svg("<rect class=\"ps\" style=\"fill: %s\" x=\"125\" y=\"160\" width=\"30\" height=\"18\" />", "rgb(170,236,170)");
+	svg("<text class=\"sec\" x=\"160\" y=\"175\">runtime</text>");
+	svg("<rect class=\"ps\" style=\"fill: %s\" x=\"245\" y=\"160\" width=\"30\" height=\"18\" />", "rgb(188,166,66)");
+	svg("<text class=\"sec\" x=\"280\" y=\"175\">sleeptime</text>");
 }
 
 
@@ -801,7 +807,7 @@ static void svg_ps_bars(void)
 
 	svg("<!-- Process graph -->\n");
 
-	svg("<text class=\"t2\" x=\"5\" y=\"-15\">Processes</text>\n");
+	// svg("<text class=\"t2\" x=\"5\" y=\"-15\">Processes</text>\n");
 
 	/* surrounding box */
 	svg_graph_box(pcount);
@@ -821,6 +827,7 @@ static void svg_ps_bars(void)
 
 		/* it would be nice if we could use exec_start from /proc/pid/sched,
 		 * but it's unreliable and gives bogus numbers */
+		sampletime[ps->first] = ps->starttime;
 		starttime = sampletime[ps->first];
 
 		if (!ps_filter(ps)) {
@@ -845,7 +852,25 @@ static void svg_ps_bars(void)
 		svg("  <rect class=\"ps\" x=\"%.03f\" y=\"%.03f\" width=\"%.03f\" height=\"%.03f\" />\n",
 		    time_to_graph(starttime - graph_start),
 		    ps_to_graph(j),
-		    time_to_graph(sampletime[ps->last] - starttime),
+		    time_to_graph(ps->total),
+		    ps_to_graph(1));
+		svg("  <rect class=\"ps\" style=\"fill: %s\" x=\"%.03f\" y=\"%.03f\" width=\"%.03f\" height=\"%.03f\" />\n",
+            "rgb(181,166,66)",
+		    time_to_graph(starttime - graph_start),
+		    ps_to_graph(j),
+		    time_to_graph(ps->sample->waittime),
+		    ps_to_graph(1));
+		svg("  <rect class=\"ps\" style=\"fill: %s\" x=\"%.03f\" y=\"%.03f\" width=\"%.03f\" height=\"%.03f\" />\n",
+            "rgb(170,236,170)",
+		    time_to_graph(starttime - graph_start + ps->sample->waittime),
+		    ps_to_graph(j),
+		    time_to_graph(ps->sample->runtime),
+		    ps_to_graph(1));
+		svg("  <rect class=\"ps\" style=\"fill: %s\" x=\"%.03f\" y=\"%.03f\" width=\"%.03f\" height=\"%.03f\" />\n",
+            "rgb(109,200,231)",
+		    time_to_graph(starttime - graph_start + ps->sample->waittime + ps->sample->runtime),
+		    ps_to_graph(j),
+		    time_to_graph(ps->total - ps->sample->waittime - ps->sample->runtime),
 		    ps_to_graph(1));
 
 		/* paint cpu load over these */
@@ -891,12 +916,15 @@ static void svg_ps_bars(void)
 			wt = ps->first;
 
 		/* text label of process name */
-		svg("  <text x=\"%.03f\" y=\"%.03f\">%s [%i] <tspan class=\"run\">%.03fs</tspan></text>\n",
+		svg("  <text x=\"%.03f\" y=\"%.03f\">%s [%i] (starttime:%.03fs waittime:%.03fs runtime:%.03fs sleeptime:%.03fs)</text>\n",
 		    time_to_graph(sampletime[wt] - graph_start) + 5.0,
 		    ps_to_graph(j) + 14.0,
 		    ps->name,
 		    ps->pid,
-		    (ps->sample[ps->last].runtime - ps->sample[ps->first].runtime) / 1000000000.0);
+		    ps->starttime,
+		    ps->sample->waittime,
+		    ps->sample->runtime,
+		    ps->total - ps->sample->waittime - ps->sample->runtime);
 		/* paint lines to the parent process */
 		if (ps->parent) {
 			/* horizontal part */
@@ -1064,48 +1092,28 @@ void svg_do(void)
 	/* after this, we can draw the header with proper sizing */
 	svg_header();
 
-	svg("<g transform=\"translate(10,400)\">\n");
-	svg_io_bi_bar();
-	svg("</g>\n\n");
-
-	svg("<g transform=\"translate(10,%.03f)\">\n", 400.0 + (scale_y * 7.0));
-	svg_io_bo_bar();
-	svg("</g>\n\n");
-
-	svg("<g transform=\"translate(10,%.03f)\">\n", 400.0 + (scale_y * 14.0));
-	svg_cpu_bar();
-	svg("</g>\n\n");
-
-	svg("<g transform=\"translate(10,%.03f)\">\n", 400.0 + (scale_y * 21.0));
-	svg_wait_bar();
+	svg("<g transform=\"translate(10,0)\">\n");
+	svg_title();
 	svg("</g>\n\n");
 
 	if (kcount) {
-		svg("<g transform=\"translate(10,%.03f)\">\n", 400.0 + (scale_y * 28.0));
+		svg("<g transform=\"translate(10,0)\">\n", 200.0);
 		svg_do_initcall(0);
 		svg("</g>\n\n");
 	}
 
-	svg("<g transform=\"translate(10,%.03f)\">\n", 400.0 + (scale_y * 28.0) + ksize);
+	svg("<g transform=\"translate(10,%.03f)\">\n", 200.0 + ksize);
 	svg_ps_bars();
 	svg("</g>\n\n");
 
-	svg("<g transform=\"translate(10,  0)\">\n");
-	svg_title();
-	svg("</g>\n\n");
-
-	svg("<g transform=\"translate(10,200)\">\n");
-	svg_top_ten_cpu();
-	svg("</g>\n\n");
-	
 	if (entropy) {
-		svg("<g transform=\"translate(10,%.03f)\">\n", 400.0 + (scale_y * 28.0) + ksize + psize);
+		svg("<g transform=\"translate(10,%.03f)\">\n", 200.0 + ksize + psize);
 		svg_entropy_bar();
 		svg("</g>\n\n");
 	}
 
 	if (pss) {
-		svg("<g transform=\"translate(10,%.03f)\">\n", 400.0 + (scale_y * 28.0) + ksize + psize + esize);
+		svg("<g transform=\"translate(10,%.03f)\">\n", 200.0 + ksize + psize + esize);
 		svg_pss_graph();
 		svg("</g>\n\n");
 

@@ -103,6 +103,7 @@ void log_sample(int sample)
 	ssize_t s;
 	ssize_t n;
 	struct dirent *ent;
+	unsigned int starttime;
 
 	if (!vmstat) {
 		/* block stuff */
@@ -242,7 +243,7 @@ schedstat_next:
 			/* mark our first sample */
 			ps->first = sample;
 
-			/* get name, start time */
+			/* get name */
 			if (!ps->sched) {
 				sprintf(filename, "/proc/%d/sched", pid);
 				ps->sched = open(filename, O_RDONLY);
@@ -260,31 +261,19 @@ schedstat_next:
 				continue;
 
 			strncpy(ps->name, key, 16);
-			/* discard line 2 */
-			m = bufgetline(buf);
-			if (!m)
-				continue;
 
-			m = bufgetline(m);
-			if (!m)
-				continue;
-
-			if (!sscanf(m, "%*s %*s %s", t))
-				continue;
-
-			ps->starttime = strtod(t, NULL) / 1000.0;
-
-			/* ppid */
+			/* get ppid and starttime */
 			sprintf(filename, "/proc/%d/stat", pid);
 			stat = fopen(filename, "r");
 			if (!stat)
 				continue;
-			if (!fscanf(stat, "%*s %*s %*s %i", &p)) {
+			if (!fscanf(stat, "%*s %*s %*s %i %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %*s %u", &p, &starttime)) {
 				fclose(stat);
 				continue;
 			}
 			fclose(stat);
 			ps->ppid = p;
+			ps->starttime = starttime / 100.0;
 
 			/*
 			 * setup child pointers
@@ -329,7 +318,7 @@ schedstat_next:
 		/* below here is all continuous logging parts - we get here on every
 		 * iteration */
 
-		/* rt, wt */
+		/* rt, wt = runtime, waittime */
 		if (!ps->schedstat) {
 			sprintf(filename, "/proc/%d/schedstat", pid);
 			ps->schedstat = open(filename, O_RDONLY);
@@ -350,12 +339,11 @@ schedstat_next:
 			continue;
 
 		ps->last = sample;
-		ps->sample[sample].runtime = atoll(rt);
-		ps->sample[sample].waittime = atoll(wt);
+		ps->sample->runtime = atoll(rt) / 1000000000.0;
+		ps->sample->waittime = atoll(wt) / 1000000000.0;
 
-		ps->total = (ps->sample[ps->last].runtime
-				 - ps->sample[ps->first].runtime)
-				 / 1000000000.0;
+		// How long has the process been running from boot to now?
+		ps->total = gettime_ns() - ps->starttime;
 
 		if (!pss)
 			goto catch_rename;
